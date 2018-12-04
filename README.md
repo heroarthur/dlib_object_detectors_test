@@ -13,12 +13,18 @@ _train models due to (in train_test_models):_
 >upsample_back_y_size = 400  
 >interpols = [cv.INTER_NEAREST, cv.INTER_LANCZOS4, cv.INTER_AREA]  
 >interpols_names = ["NEAREST", "LANCZOS4", "AREA"]  
->training_set_sizes = [50, 100, 150, 200]  
+>training_set_sizes = [50, 100, 150, 200]  #be carreful no to exceed training_images size  
 >availabile_cores = 23  
 
 _and save in **trained_models**_
 > python3 ./train_test_models train_save  
 
   
-_on **images_set/test_images** make detection with every trained model and give result plots in pdf_
+_on **images_set/test_images** make detection with every trained model due to :
+>test_img_size = 20  #be carreful not to exceed test_images size
+
+and give result plots in pdf_
+
 > python3 ./train_test_models result_pdf
+
+

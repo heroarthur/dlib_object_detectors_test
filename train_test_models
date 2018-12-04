@@ -35,7 +35,7 @@ upsample_back_y_size = 400
 upsampling_back_type = cv2.INTER_CUBIC #preffered
 interpols = [cv.INTER_NEAREST, cv.INTER_LANCZOS4, cv.INTER_AREA, cv.INTER_CUBIC]
 interpols_names = ["NEAREST", "LANCZOS4", "AREA", "CUBIC"]
-training_set_sizes = [50, 100, 150, 200]
+training_set_sizes = [5,10,15]
 availabile_cores = 23
 
 if(stage in ("all", "train_save")):
@@ -65,7 +65,7 @@ upsampling_back_type = upsampling_back_type
 interpols = interpols
 interpols_names = interpols_names
 training_set_sizes = training_set_sizes
-test_img_size = 40
+test_img_size = 3
 
 if(stage in ("all", "result_pdf")):
 	print("testing models...")
