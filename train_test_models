@@ -9,16 +9,19 @@ def pack_list(l):
 	return '_'.join(l)
 
 
+stage = sys.argv[1]
+
 #filter_0_detected_faces
 cwd = os.getcwd()
 data_images_path = cwd+"/image_set"
 image_metadata_stylesheet = cwd+"/src/image_metadata_stylesheet.xsl"
 upsample_detection_in_filtering = 0 #preffered
 
-print("creating training set...")
-os.system("python3 src/filter_0_detected_faces {} {} {}".format(data_images_path, image_metadata_stylesheet, upsample_detection_in_filtering))
+if(stage in ("all", "filter_set")):
+	print("creating training set...")
+	os.system("python3 src/filter_0_detected_faces {} {} {}".format(data_images_path, image_metadata_stylesheet, upsample_detection_in_filtering))
 
-print("image set labeled succesfully! \n")
+	print("image set labeled succesfully! \n")
 
 
 
@@ -35,18 +38,19 @@ interpols_names = ["NEAREST", "LANCZOS4", "AREA", "CUBIC"]
 training_set_sizes = [50, 100, 150, 200]
 availabile_cores = 23
 
-print("training models...")
-os.system("python3 src/train_save_models {} {} {} {} {} {} {} {} {} {}".format(processed_data_set,
-								training_imgs, trained_models, 
-								pack_list(scaled_y_size), 
-								upsample_back_y_size, 
-								upsampling_back_type, 
-								pack_list(interpols), 
-								pack_list(interpols_names), 
-								pack_list(training_set_sizes), 
-								availabile_cores))
+if(stage in ("all", "train_save")):
+	print("training models...")
+	os.system("python3 src/train_save_models {} {} {} {} {} {} {} {} {} {}".format(processed_data_set,
+									training_imgs, trained_models, 
+									pack_list(scaled_y_size), 
+									upsample_back_y_size, 
+									upsampling_back_type, 
+									pack_list(interpols), 
+									pack_list(interpols_names), 
+									pack_list(training_set_sizes), 
+									availabile_cores))
 
-print("models trained succesfully! \n")
+	print("models trained succesfully! \n")
 
 
 
@@ -63,19 +67,20 @@ interpols_names = interpols_names
 training_set_sizes = training_set_sizes
 test_img_size = 40
 
-print("testing models...")
-os.system("python3 src/accuracy_error_rate_plots {} {} {} {} {} {} {} {} {} {} {}".format(processed_data_set,
-								test_images, 
-								trained_models, 
-								plot_pdf_path, 
-								pack_list(scaled_y_size), 
-								upsample_back_y_size, 
-								upsampling_back_type, 
-								pack_list(interpols), 
-								pack_list(interpols_names), 
-								pack_list(training_set_sizes), 
-								test_img_size))
+if(stage in ("all", "result_pdf")):
+	print("testing models...")
+	os.system("python3 src/accuracy_error_rate_plots {} {} {} {} {} {} {} {} {} {} {}".format(processed_data_set,
+									test_images, 
+									trained_models, 
+									plot_pdf_path, 
+									pack_list(scaled_y_size), 
+									upsample_back_y_size, 
+									upsampling_back_type, 
+									pack_list(interpols), 
+									pack_list(interpols_names), 
+									pack_list(training_set_sizes), 
+									test_img_size))
 
-print("result plots for different models sets in {}".format(plot_pdf_path))
+	print("result plots for different models sets in {}".format(plot_pdf_path))
 
 
