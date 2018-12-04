@@ -1,0 +1,235 @@
+#!/usr/bin/python3
+
+
+import cv2 as cv, cv2
+import numpy as np
+
+from matplotlib import pyplot as plt
+plt.switch_backend('agg')
+import sys
+import os
+import dlib
+import glob
+import json
+import random
+import shutil
+from matplotlib.backends.backend_pdf import PdfPages
+import sys
+
+
+def string_to_list(conv_type, s, delimiter = '_'):
+	return [conv_type(el) for el in s.split(delimiter)]
+
+
+
+processed_data_set = sys.argv[1]
+test_images = sys.argv[2]
+trained_models = sys.argv[3]
+
+plot_pdf_path = sys.argv[4]
+pdf_plots = PdfPages(plot_pdf_path)
+
+
+os.chdir(test_images)
+img_names = [img for img in glob.glob("*")]
+images = [cv2.imread(img_name)[:,:,::-1] for img_name in img_names]
+
+scaled_y_size = string_to_list(int, sys.argv[5], '_')
+upsample_back_y_size = int(sys.argv[6])
+upsampling_back_type = int(sys.argv[7])
+
+
+interp_d = dict((("NEAREST", cv.INTER_NEAREST), ("LANCZOS4", cv.INTER_LANCZOS4), ("AREA", cv.INTER_AREA), ("LINEAR", cv.INTER_LINEAR), ("CUBIC", cv.INTER_CUBIC)))
+
+interpols = string_to_list(int, sys.argv[8], '_')
+interpols_names = string_to_list(str, sys.argv[9], '_')
+
+
+
+model_dirs_names = [(interp, trained_models+'/'+interp + '/') for interp in interpols_names]
+model_dirs_names = dict(model_dirs_names)
+
+training_set_sizes = string_to_list(int, sys.argv[10], '_')
+training_set_sizes_plot_array = np.asarray(training_set_sizes)
+tr_set_size = len(training_set_sizes)
+
+
+C_svm = [5.0]
+
+test_img_size = int(sys.argv[11])
+
+test_img_sets = random.sample(images, test_img_size)
+
+models = {}
+
+for interp_name in interpols_names:
+    for det_type in [".svm"]:    
+        dir_name = model_dirs_names[interp_name]
+        os.chdir(dir_name)
+        models_path = glob.glob(os.path.join(dir_name, '*'+det_type))
+        models_list = glob.glob('*'+det_type)
+        for m, dst in zip(models_list, models_path):
+            model_name = m.split(det_type)[0]
+            model_info = model_name.split('_')      
+            models[model_name] = dict(zip(model_info[0::2],model_info[1::2]))
+            models[model_name]['detected_faces'] = 0
+            models[model_name]['average_confidence'] = 0
+            models[model_name]['detector'] = dlib.simple_object_detector(dst)
+        
+
+upsample_num_times = 1
+adjust_threshold = 0.9
+#run_det = dlib.fhog_object_detector.run_multiple
+
+
+
+#frontal face detector
+detector = dlib.get_frontal_face_detector()
+img_dets = [detector.run(img, upsample_num_times=upsample_num_times, adjust_threshold=adjust_threshold) for img in test_img_sets] 
+dlib_frontal_face_detector = {}
+dlib_frontal_face_detector["img_dets"] = img_dets
+dlib_frontal_face_detector["detected_faces"] = sum([len(dets[0]) for dets in img_dets])
+dlib_frontal_face_detector["average_confidence"] = sum([sum(dets[1]) for dets in img_dets])/max(dlib_frontal_face_detector["detected_faces"],1)
+
+#face prediction in array to easy plot and manipulate
+l = [np.ones(tr_set_size) for i in range(2)]
+l[0] *= dlib_frontal_face_detector["detected_faces"]
+l[1] *= dlib_frontal_face_detector["average_confidence"]
+frontal_face_detector_preds = dict(zip(["face_cout_vs_tr_size", "average_confidence"],l))
+
+for key, model_data in models.items():
+    #resize images
+    y_size  = int(model_data["y-size"])
+    interpol = interp_d[model_data["interpol"]]
+    
+    #scale down due to y_size and interpolation type
+    processed_test_set = [cv.resize(img,(x_size, y_size), interpolation = interpol) for i, img in enumerate(images) for x_size in [int(y_size*img.shape[1]/img.shape[0])]]
+
+    #upsample back to upsample_back_y_size (cause trening images also were scaled down and upsampled back)
+    processed_test_set = [cv.resize(img,(x_size, upsample_back_y_size), interpolation = upsampling_back_type) for i, img in enumerate(processed_test_set) for x_size in [int(upsample_back_y_size*img.shape[1]/img.shape[0])]]
+
+    
+    img_dets = [dlib.fhog_object_detector.run_multiple([model_data["detector"]], img, upsample_num_times=upsample_num_times, adjust_threshold=adjust_threshold) for img in processed_test_set]
+    model_data["img_dets"] = img_dets
+    model_data["detected_faces"] = sum([len(dets[0]) for dets in img_dets])
+    model_data["average_confidence"] = sum([sum(dets[1]) for dets in img_dets])/max(model_data["detected_faces"],1)
+    
+
+
+
+predictions = {}
+
+for interpol in interpols_names:    
+    for y_size in scaled_y_size:
+        model_pred_key = interpol+"_"+str(tr_set_size)
+        ks = ["face_cout_vs_tr_size", "missing_detected_faces", "average_confidence"] 
+        zero_arrays = [np.zeros(tr_set_size) for i in range(len(ks))]
+        predictions[model_pred_key] = dict(zip(ks,zero_arrays))
+
+
+#interpol_NEAREST_y-size_200_tr-set-size_10_C_5.0
+def model_key(interpol_name, y_size, tr_size, C):
+    param_names = ["interpol", "y-size", "tr-set-size", "C"]
+    param_values = [interpol_name, y_size, tr_size, round(C,1)]  
+    k_name = [str(name)+"_"+str(val) for name, val in zip(param_names, param_values)]
+    k_name = "_".join(k_name)
+    return k_name
+
+
+def pred_key(interpol, tr_size):
+    k_name = str(interpol)+"_"+str(tr_set_size)
+    return k_name
+
+
+
+for interp, interp_name in zip(interpols, interpols_names):
+    for y_size in scaled_y_size:
+        for tr_set_index, tr_size in enumerate(training_set_sizes):
+            for C in C_svm:
+                pr_key = pred_key(interp_name, tr_size)
+                mod_key = model_key(interp_name, y_size, tr_size, C)    
+                predictions[pr_key]["face_cout_vs_tr_size"][tr_set_index] = models[mod_key]["detected_faces"]
+                predictions[pr_key]["average_confidence"][tr_set_index] = models[mod_key]["average_confidence"]
+                
+                #predictions[pr_key]["missing_detected_faces"][tr_set_index] = frontal_face_detector_preds["detected_faces"]
+
+
+
+plot_format = {}
+#color='blue', marker='D', linestyle='dashed', linewidth=2, markersize=10, fillstyle='full'
+plot_format["dlib_frontal_face_detector"] = ('blue', 'D','dashed',2,10,'full')
+marker, line_style, l_width, marker_size = 'o', 'dashed', 2, 7
+plot_format["NEAREST"] = ('midnightblue', marker, line_style,l_width, marker_size,'full')
+plot_format["AREA"] = ('cyan', marker, line_style,l_width, marker_size,'full')
+plot_format["LANCZOS4"] = ('magenta', marker, line_style,l_width, marker_size,'full')
+plot_format["CUBIC"] = ('green', marker, line_style,l_width, marker_size,'full')
+plot_format["LINEAR"] = ('red', marker, line_style,l_width, marker_size,'full')
+
+
+
+
+def set_plot_description(title, ylabel, legend):
+    plt.title(title, fontsize=21, color="dimgray")
+    plt.legend(legend, loc='upper left', fontsize=10)
+    plt.xlabel("training set size", fontsize=15)
+    plt.ylabel(ylabel, fontsize=15)
+    #plt.show()    
+    
+
+def save_plot(pdf_plots, f):    
+    pdf_plots.savefig(f)
+
+
+    
+
+def plot_all_svm_models_interpolation_type(oryginal_detector="dlib_frontal_face_detector", pred_type="face_cout_vs_tr_size",  ylabel_descr="faces detected"):
+    legend = [oryginal_detector]
+    for y_size in scaled_y_size:
+        for C in C_svm:
+            x, y = training_set_sizes_plot_array, frontal_face_detector_preds[pred_type]
+            color, marker, l_style, l_width, marker_size, fillstyle = plot_format[oryginal_detector]
+            plot_figure = plt.figure()
+            plt.plot(x, y, color='blue', marker='D', linestyle='dashed', linewidth=2, markersize=10, fillstyle='full')     
+            for interp, interp_name in zip(interpols, interpols_names):   
+                pr_key = pred_key(interp_name, tr_size)
+                y = predictions[pr_key][pred_type]
+                color, marker, l_style, l_width, marker_size, fillstyle = plot_format[interp_name]
+                plt.plot(x, y, color=color, marker=marker, linestyle=l_style, linewidth=l_width, markersize=marker_size, fillstyle=fillstyle)        
+                legend.append(interp_name)
+
+            title = "image y_size={} C={}".format(y_size, C)  
+            set_plot_description(title, ylabel_descr, legend)
+            save_plot(pdf_plots, plot_figure)
+            
+
+def plot_interpol_type_vs_C_values(oryginal_detector="dlib_frontal_face_detector", pred_type="face_cout_vs_tr_size",  ylabel_descr="faces detected"):
+    legend = [oryginal_detector]
+    for y_size in scaled_y_size:
+        for interp, interp_name in zip(interpols, interpols_names):   
+            x, y = training_set_sizes_plot_array, frontal_face_detector_preds[pred_type]
+            color, marker, l_style, l_width, marker_size, fillstyle = plot_format[oryginal_detector]
+            plot_figure = plt.figure()
+            plt.plot(x, y, color='blue', marker='D', linestyle='dashed', linewidth=2, markersize=10, fillstyle='full')     
+            for C in C_svm:
+                pr_key = pred_key(interp_name, tr_size)
+                y = predictions[pr_key][pred_type]
+                color, marker, l_style, l_width, marker_size, fillstyle = plot_format[interp_name]
+                plt.plot(x, y, color=color, marker=marker, linestyle=l_style, linewidth=l_width, markersize=marker_size, fillstyle=fillstyle)        
+                legend.append("C={}".format(C))
+
+            title = "image y_size={} interpolation={}".format(y_size, interp_name)  
+            set_plot_description(title, ylabel_descr, legend)
+            save_plot(pdf_plots, plot_figure)
+
+
+
+
+
+plot_all_svm_models_interpolation_type(oryginal_detector="dlib_frontal_face_detector", pred_type="face_cout_vs_tr_size",  ylabel_descr="detected faces")
+
+plot_all_svm_models_interpolation_type(oryginal_detector="dlib_frontal_face_detector", pred_type="average_confidence",  ylabel_descr="average confidence")
+
+#plot_interpol_type_vs_C_values(oryginal_detector="dlib_frontal_face_detector", pred_type="average_confidence",  ylabel_descr="average confidence")
+
+pdf_plots.close()
+

@@ -1,0 +1,81 @@
+#!/usr/bin/python3
+import os
+import sys
+import cv2 as cv, cv2
+
+
+def pack_list(l):
+	l = [str(e) for e in l]
+	return '_'.join(l)
+
+
+#filter_0_detected_faces
+cwd = os.getcwd()
+data_images_path = cwd+"/image_set"
+image_metadata_stylesheet = cwd+"/src/image_metadata_stylesheet.xsl"
+upsample_detection_in_filtering = 0 #preffered
+
+print("creating training set...")
+os.system("python3 src/filter_0_detected_faces {} {} {}".format(data_images_path, image_metadata_stylesheet, upsample_detection_in_filtering))
+
+print("image set labeled succesfully! \n")
+
+
+
+
+#train_save_models
+processed_data_set = data_images_path
+training_imgs = processed_data_set + "/training_images"
+trained_models = cwd + "/trained_models"
+scaled_y_size = [100,200,300]
+upsample_back_y_size = 400
+upsampling_back_type = cv2.INTER_CUBIC #preffered
+interpols = [cv.INTER_NEAREST, cv.INTER_LANCZOS4, cv.INTER_AREA, cv.INTER_CUBIC]
+interpols_names = ["NEAREST", "LANCZOS4", "AREA", "CUBIC"]
+training_set_sizes = [50, 100, 150, 200]
+availabile_cores = 23
+
+print("training models...")
+os.system("python3 src/train_save_models {} {} {} {} {} {} {} {} {} {}".format(processed_data_set,
+								training_imgs, trained_models, 
+								pack_list(scaled_y_size), 
+								upsample_back_y_size, 
+								upsampling_back_type, 
+								pack_list(interpols), 
+								pack_list(interpols_names), 
+								pack_list(training_set_sizes), 
+								availabile_cores))
+
+print("models trained succesfully! \n")
+
+
+
+#accuracy_error_rate_plots
+processed_data_set = data_images_path
+test_images = processed_data_set + "/test_images"
+trained_models = trained_models
+plot_pdf_path = cwd + "/result_accuracy_plots.pdf"
+scaled_y_size = scaled_y_size
+upsample_back_y_size = upsample_back_y_size
+upsampling_back_type = upsampling_back_type
+interpols = interpols
+interpols_names = interpols_names
+training_set_sizes = training_set_sizes
+test_img_size = 40
+
+print("testing models...")
+os.system("python3 src/accuracy_error_rate_plots {} {} {} {} {} {} {} {} {} {} {}".format(processed_data_set,
+								test_images, 
+								trained_models, 
+								plot_pdf_path, 
+								pack_list(scaled_y_size), 
+								upsample_back_y_size, 
+								upsampling_back_type, 
+								pack_list(interpols), 
+								pack_list(interpols_names), 
+								pack_list(training_set_sizes), 
+								test_img_size))
+
+print("result plots for different models sets in {}".format(plot_pdf_path))
+
+

@@ -1,0 +1,107 @@
+#!/root/anaconda3/bin/python
+import cv2 as cv, cv2
+import numpy as np
+from matplotlib import pyplot as plt
+import sys
+import os
+import dlib
+import glob
+import random
+import json
+import shutil
+import xml.etree.cElementTree as ET
+import sys
+
+
+data_images_path =  sys.argv[1]
+image_metadata_stylesheet = sys.argv[2]
+upsample_times = int(sys.argv[3])
+
+training_images_path = data_images_path + "/" + "training_images/"
+test_images_path = data_images_path + "/" + "test_images/"
+
+
+
+os.chdir(data_images_path)
+img_names = [img for img in glob.glob("*.jpg")] #TO DO: also png
+images = [cv2.imread(img_name) for img_name in img_names]
+
+filelist = glob.glob(os.path.join(data_images_path, "*"))
+for f in filelist:
+    try:
+        os.remove(f)  
+    except:
+        os.rmdir(f)
+
+shutil.copy(image_metadata_stylesheet, data_images_path)
+for new_dir in [training_images_path, test_images_path]:
+    if not os.path.exists(new_dir):
+        os.makedirs(new_dir)
+
+detector = dlib.get_frontal_face_detector()
+
+
+
+def line_prepender(filename, line):
+    with open(filename, 'r+') as f:
+        content = f.read()
+        f.seek(0, 0)
+        f.write(line.rstrip('\r\n') + '\n' + content)
+        
+#xml file with marked images
+encoding = "<?xml version='1.0' encoding='ISO-8859-1'?>"
+style = "<?xml-stylesheet type='text/xsl' href='image_metadata_stylesheet.xsl'?>"
+new_xml_file = "marked_image_view.xml"
+
+dataset = ET.Element("dataset")
+doc = ET.SubElement(dataset, "name").text = "training set with boxed faces"
+doc = ET.SubElement(dataset, "comment").text = "badly marked faces can be remove manually to improve training set"
+xml_images = ET.SubElement(dataset, "images")
+xml_images.text = " "
+
+
+
+
+
+
+img_face_points = {}
+filtr_names = []
+filtr_imgs = []
+
+for name, img in zip(img_names, images):
+    dets = detector(img, upsample_times)
+    if(len(dets)):
+        filtr_names.append(name)
+        filtr_imgs.append(img)
+        #(left,right,top,bottom)
+        face_points = [(rec.left(), rec.right(), rec.top(), rec.bottom()) for rec in dets]
+        img_face_points[name] = face_points
+
+
+def save_in_traning_set(probability):
+    return random.random() < probability
+
+left, right, top, bottom = 0,1,2,3
+
+
+for i, (name, img) in enumerate(zip(filtr_names, filtr_imgs)):
+    if (save_in_traning_set(0.85)):
+        new_img_dst = training_images_path+name
+        cv.imwrite(new_img_dst, img)
+        e = ET.SubElement(xml_images, "image", file=new_img_dst); e.text = " "
+        for rec in img_face_points[name]:
+            width = str(rec[right]-rec[left])
+            height = str(rec[bottom]-rec[top])
+            ET.SubElement(e, "box", top=str(rec[top]), left=str(rec[left]), width=width, height=height)
+    else:
+        new_img_dst = test_images_path+name
+        cv.imwrite(new_img_dst, img)
+
+
+with open('face_boxes.json', 'w') as fp:
+    json.dump(img_face_points, fp)
+
+tree = ET.ElementTree(dataset)
+tree.write(new_xml_file, xml_declaration=False)
+line_prepender(new_xml_file, style)
+line_prepender(new_xml_file, encoding)

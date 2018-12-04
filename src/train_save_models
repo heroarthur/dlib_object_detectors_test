@@ -1,0 +1,133 @@
+#!/usr/bin/python3
+
+import cv2 as cv, cv2
+import numpy as np
+from matplotlib import pyplot as plt
+import sys
+import os
+import dlib
+import glob
+import json
+import random
+import shutil
+import sys
+
+
+def string_to_list(conv_type, s, delimiter = '_'):
+	return [conv_type(el) for el in s.split(delimiter)]
+
+processed_data_set = sys.argv[1]
+training_imgs = sys.argv[2]
+trained_models = sys.argv[3]
+
+
+
+os.chdir(training_imgs)
+img_names = [img for img in glob.glob("*")]
+images = [cv2.imread(img_name)[:,:,::-1] for img_name in img_names]
+
+scaled_y_size = string_to_list(int, sys.argv[4], '_')
+scaled_y_size_fname = [str(t)+"_y_size" for t in scaled_y_size]
+
+upsample_back_y_size = int(sys.argv[5])
+upsampling_back_type = int(sys.argv[6])
+
+interpols = string_to_list(int, sys.argv[7], '_')
+interpols_names = string_to_list(str, sys.argv[8], '_')
+
+training_set_sizes = string_to_list(int, sys.argv[9], '_')
+availabile_cpu_cores = int(sys.argv[10])
+
+
+model_dirs_names = [(interp, trained_models+"/"+interp) for interp in interpols_names]
+model_dirs_names = dict(model_dirs_names)
+
+
+
+os.chdir(processed_data_set)
+
+face_boxes_f = "face_boxes.json"
+with open(face_boxes_f) as f:
+    face_boxes = json.load(f)
+    
+os.chdir(training_imgs)
+filelist = glob.glob(os.path.join(trained_models, "*"))
+for f in filelist:
+    try:
+         os.remove(f)  
+    except:
+        shutil.rmtree(f, ignore_errors=True)
+
+        
+if not os.path.exists(trained_models):
+    os.makedirs(trained_models)
+os.chdir(trained_models)
+for inter_name in interpols_names:
+    os.makedirs(inter_name)
+
+
+
+def random_tr_imgs_set(size, y_size, interpol, all_imgs_size = len(img_names)):
+    left, right, top, bottom = 0,1,2,3
+    
+    choosen = random.sample([i for i in range(0,all_imgs_size)], size)
+    sampled_names = [name for i, name in enumerate(img_names) if i in choosen]
+    
+    #scale images down
+    sampled_imgs = [cv.resize(img,(x_size, y_size), interpolation = interpol) for i, img in enumerate(images) for x_size in [int(y_size*img.shape[1]/img.shape[0])] if i in choosen]
+    
+    #upsample images back to upsample_back_y_size to better fit slide detector template windows
+    sampled_imgs = [cv.resize(img,(x_size, upsample_back_y_size), interpolation = upsampling_back_type) for i, img in enumerate(sampled_imgs) for x_size in [int(upsample_back_y_size*img.shape[1]/img.shape[0])]]
+    
+    ori_y_size = [img.shape[0] for i, img in enumerate(images) if i in choosen]
+
+    scale_ratios = [(upsample_back_y_size/ori_y) for ori_y in ori_y_size] #old y_size
+    boxes = [[(box[left], box[top], box[right], box[bottom]) for box in face_boxes[img_name]] for img_name in sampled_names]
+
+    scaled_boxes = [[(round(left*ratio), round(top*ratio), round(right*ratio), round(bottom*ratio)) for left,top,right,bottom in boxs] for boxs, ratio in zip(boxes, scale_ratios)]
+    dlib_boxes = [[dlib.rectangle(left=left, top=top, right=right, bottom=bottom) for left,top,right,bottom in boxs] for boxs in scaled_boxes]
+
+    return sampled_names, sampled_imgs, dlib_boxes
+    
+
+
+
+options = dlib.simple_object_detector_training_options()
+# Since faces are left/right symmetric we can tell the trainer to train a
+# symmetric detector.  This helps it get the most value out of the training
+# data.
+options.add_left_right_image_flips = True
+# The trainer is a kind of support vector machine and therefore has the usual
+# SVM C parameter.  In general, a bigger C encourages it to fit the training
+# data better but might lead to overfitting.  You must find the best C value
+# empirically by checking how well the trained detector works on a test set of
+# images you haven't trained on.  Don't just leave the value set at 5.  Try a
+# few different C values and see what works best for your data.
+options.C = 5
+# Tell the code how many CPU cores your computer has for the fastest training.
+options.num_threads = availabile_cpu_cores #23 (remotely have 24)
+options.be_verbose = False
+
+left, right, top, bottom = 0,1,2,3
+w = '_'
+
+for interp, interp_name in zip(interpols, interpols_names):
+    for y_size in scaled_y_size:
+        for tr_size in training_set_sizes:
+            #losoj zbior obrazow
+            #przeksztalc resizem
+            #oblicz nowe punkty
+            rand_img_names, rand_imgs, imgs_boxes = random_tr_imgs_set(tr_size, y_size, interp)
+
+            #trenuj model
+            fhog_detector = dlib.train_simple_object_detector(rand_imgs, imgs_boxes, options)
+            tr_params_names = ["interpol", "y-size", "tr-set-size","C"]
+            tr_params_vals = [interp_name, str(y_size), str(tr_size), str(options.C)]
+            detector_name = '_'.join([p_name+"_"+p_val for p_name, p_val in zip(tr_params_names, tr_params_vals)])+".svm"
+            #zapisz model
+            fhog_detector.save(model_dirs_names[interp_name] + "/" + detector_name)
+            
+
+
+
+
